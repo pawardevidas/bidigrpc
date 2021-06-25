@@ -1,0 +1,18 @@
+syntax = "proto3";
+
+package protobuf;
+
+option go_package = "github.com/pawardevidas/bidigrpc/src/proto";
+
+service Math {
+  rpc Max (stream Request) returns (stream Response);
+}
+
+message Request {
+  int32 num = 1;
+}
+
+message Response {
+  int32 result = 1;
+  string hostname = 2;
+}
