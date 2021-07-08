@@ -3,7 +3,7 @@ FROM gcr.io/cloud-builders/go as build
 ENV GOPATH /go
 ENV GO111MODULE on
 
-WORKDIR ${GOPATH}/src
+WORKDIR ${GOPATH}/client
 
 COPY go.mod go.sum ./
 

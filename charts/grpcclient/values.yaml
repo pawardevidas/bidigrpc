@@ -1,0 +1,5 @@
+proxyimage: proxyv2:1.8.5
+imagepullpolicy: IfNotPresent 
+imagename: devidaspawar/client
+imagetag: 0.0.1
+serverconnstring: "grpcserver.default:50005"

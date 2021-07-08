@@ -1,0 +1,5 @@
+imagepullpolicy: Always
+imagename: devidaspawar/client
+imagetag: 0.0.1
+serverconnstring: "grpcserver-svc.default:50005"
+clientport: 50005

@@ -1,0 +1,8 @@
+apiVersion: v2
+name: client
+version: 0.0.1
+appVersion: 0.0.1
+description: GRPC Client
+mainteners:
+  name: XYZ
+  email: pawardevidas@yahoo.com

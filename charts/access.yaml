@@ -1,0 +1,16 @@
+apiVersion: networking.mesh.gloo.solo.io/v1
+kind: AccessPolicy
+metadata:
+  namespace: gloo-mesh
+  name: server-access
+spec:
+  sourceSelector:
+  - kubeServiceAccountRefs:
+      serviceAccounts:
+        - name: default
+          namespace: grpcclient
+          clusterName: gkeeastus
+  destinationSelector:
+  - kubeServiceMatcher:
+      namespaces:
+      - grpcserver

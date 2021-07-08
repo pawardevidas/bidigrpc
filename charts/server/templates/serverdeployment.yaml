@@ -1,0 +1,81 @@
+---
+#
+#apiVersion: v1
+#kind: Secret
+#metadata:
+#  labels:
+#    k8s-app: zeus-app
+#  name: {{ .Release.Name }}-secret
+#  namespace: {{ .Release.Namespace }}
+#type: Opaque
+#data:
+#  PGUSERNAME: {{ .Values.dbuser }} 
+#  PGPASSWORD: {{ .Values.dbpassword }} 
+
+---
+  
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ .Release.Name }} 
+  namespace: {{ .Release.Namespace }}
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: server
+  template:
+    metadata:
+      labels:
+        app: server
+    spec:
+      #serviceAccountName: {{ .Release.Name }}-sa
+      containers:
+        - name: server
+          image: {{ .Values.imagename }}:{{ .Values.imagetag }}
+          imagePullPolicy: {{ .Values.imagepullpolicy }} 
+          resources:
+            limits:
+              cpu: 500m
+              memory: 2048Mi
+            requests:
+              cpu: 250m
+              memory: 512Mi          
+          ports:
+            - containerPort: {{ .Values.serverport }} 
+          env:
+            #- name: SERVER_CONN_STRING
+            #  value: {{ .Values.serverconnstring | quote}} 
+            #- name: KML_DB_PORT
+            #  value: {{ .Values.dbport | quote}}
+            #- name: KML_DB_NAME 
+            #  value: {{ .Values.dbname | quote}}
+            #- name: KML_DB_USER
+            #  valueFrom:
+            #    secretKeyRef:
+            #      name: {{ .Release.Name }}-secret
+            #      key: PGUSERNAME
+            #- name: KML_DB_PASSWORD
+            #  valueFrom:
+            #    secretKeyRef:
+            #      name: {{ .Release.Name }}-secret
+            #      key: PGPASSWORD
+
+---
+
+apiVersion: v1
+kind: Service
+metadata:
+  name: {{ .Release.Name }}-svc 
+  namespace: {{ .Release.Namespace }}
+spec:
+  type: {{ .Values.servicetype | default "ClusterIP" | quote }}
+  ports:
+    - name: grpc
+      port: {{ .Values.serverport }}  
+      targetPort: {{ .Values.serverport }}
+      protocol: TCP
+  selector:
+    app: server
+
+---

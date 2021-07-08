@@ -1,0 +1,4 @@
+imagepullpolicy: Always
+imagename: devidaspawar/server
+imagetag: 0.0.1
+serverport: 50005
