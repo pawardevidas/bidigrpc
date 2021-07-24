@@ -9,7 +9,7 @@ spec:
       serviceAccounts:
         - name: gateway-proxy
           namespace: gloo-system
-          clusterName: gkeeastus
+          clusterName: gkewestus
   destinationSelector:
   - kubeServiceMatcher:
       namespaces:
