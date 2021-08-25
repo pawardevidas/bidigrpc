@@ -1,0 +1,383 @@
+---
+
+apiVersion: types.kubefed.io/v1beta1
+kind: FederatedSecret
+metadata:
+  annotations:
+    resource_kind: '*v1.Secret'        
+  name:  {{ .Release.Name }}-secret
+  namespace: {{ .Release.Namespace }} 
+spec:
+  placement:
+    clusters:
+    {{- range $k2, $val := $.Values.clusters }}
+    - name: {{ $val }}
+    {{- end }}      
+  template:
+    data:
+      tls: {{  required "A valid .Values.servertlscertificate entry required!" .Values.servertlscertificate }}
+    metadata:
+      #annotations:
+      #  resource_kind: '*v1.Secret'
+      labels:
+        k8s-app: server-app
+      name: {{ .Release.Name }}-secret
+      namespace: {{ .Release.Namespace }}
+    type: Opaque
+  overrides:
+    {{- range $k2, $val := $.Values.clusters }}
+    - clusterName: {{ $val }}
+      clusterOverrides:
+        - path: "/metadata/annotations"
+          op: "add"
+          value: 
+            resource_kind: '*v1.Secret'
+    {{- end }}
+
+---
+
+apiVersion: types.kubefed.io/v1beta1
+kind: FederatedDeployment
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  placement:
+    clusters:
+    {{- range $k2, $val := $.Values.clusters }}
+    - name: {{ $val }}
+    {{- end }}
+  template:
+    spec:
+      replicas: 1
+      selector:
+        matchLabels:
+          app: server
+      strategy: {}
+      template:
+        metadata:
+          annotations:
+            prometheus.io/path: /stats/prometheus
+            prometheus.io/port: "15020"
+            prometheus.io/scrape: "true"
+            sidecar.istio.io/status: '{"version":"e2cb9d4837cda9584fd272bfa1f348525bcaacfadb7e9b9efbd21a3bb44ad7a1","initContainers":["istio-init"],"containers":["istio-proxy"],"volumes":["istio-envoy","istio-data","istio-podinfo","istio-token","istiod-ca-cert"],"imagePullSecrets":null}'
+          creationTimestamp: null
+          labels:
+            app: server
+            istio.io/rev: ""
+            security.istio.io/tlsMode: istio
+            service.istio.io/canonical-name: server
+            service.istio.io/canonical-revision: latest
+        spec:
+          containers:
+          - image: {{ .Values.imagename }}:{{ .Values.imagetag }}
+            imagePullPolicy: {{ .Values.imagepullpolicy }}
+            name: server
+            ports:
+            - containerPort: {{ .Values.serverport }}
+            resources:
+              limits:
+                cpu: 500m
+                memory: 2Gi
+              requests:
+                cpu: 250m
+                memory: 512Mi
+          - args:
+            - proxy
+            - sidecar
+            - --domain
+            - $(POD_NAMESPACE).svc.cluster.local
+            - --serviceCluster
+            - server.$(POD_NAMESPACE)
+            - --proxyLogLevel=warning
+            - --proxyComponentLogLevel=misc:error
+            - --concurrency
+            - "2"
+            env:
+            - name: JWT_POLICY
+              value: third-party-jwt
+            - name: PILOT_CERT_PROVIDER
+              value: istiod
+            - name: CA_ADDR
+              value: istiod.istio-system.svc:15012
+            - name: POD_NAME
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.name
+            - name: POD_NAMESPACE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.namespace
+            - name: INSTANCE_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.podIP
+            - name: SERVICE_ACCOUNT
+              valueFrom:
+                fieldRef:
+                  fieldPath: spec.serviceAccountName
+            - name: HOST_IP
+              valueFrom:
+                fieldRef:
+                  fieldPath: status.hostIP
+            - name: CANONICAL_SERVICE
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['service.istio.io/canonical-name']
+            - name: CANONICAL_REVISION
+              valueFrom:
+                fieldRef:
+                  fieldPath: metadata.labels['service.istio.io/canonical-revision']
+            - name: PROXY_CONFIG
+              value: |
+                {"proxyMetadata":{"DNS_AGENT":"","ISTIO_META_DNS_CAPTURE":"true"}}
+            - name: ISTIO_META_POD_PORTS
+              value: |-
+                [
+                    {"containerPort": {{ .Values.serverport }} }
+                ]
+            - name: ISTIO_META_APP_CONTAINERS
+              value: server
+            - name: ISTIO_META_CLUSTER_ID
+              value: Kubernetes
+            - name: ISTIO_META_INTERCEPTION_MODE
+              value: REDIRECT
+            - name: ISTIO_META_WORKLOAD_NAME
+              value: grpcserver
+            - name: ISTIO_META_OWNER
+              value: kubernetes://apis/apps/v1/namespaces/grpcserver/deployments/grpcserver
+            - name: ISTIO_META_MESH_ID
+              value: cluster.local
+            - name: TRUST_DOMAIN
+              value: cluster.local
+            - name: DNS_AGENT
+            - name: ISTIO_META_DNS_CAPTURE
+              value: "true"
+            image: docker.io/istio/{{ .Values.proxyimage }}
+            imagePullPolicy: Always
+            name: istio-proxy
+            ports:
+            - containerPort: 15090
+              name: http-envoy-prom
+              protocol: TCP
+            readinessProbe:
+              failureThreshold: 30
+              httpGet:
+                path: /healthz/ready
+                port: 15021
+              initialDelaySeconds: 1
+              periodSeconds: 2
+              timeoutSeconds: 3
+            resources:
+              limits:
+                cpu: "2"
+                memory: 1Gi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                drop:
+                - ALL
+              privileged: false
+              readOnlyRootFilesystem: true
+              runAsGroup: 1337
+              runAsNonRoot: true
+              runAsUser: 1337
+            volumeMounts:
+            - mountPath: /var/run/secrets/istio
+              name: istiod-ca-cert
+            - mountPath: /var/lib/istio/data
+              name: istio-data
+            - mountPath: /etc/istio/proxy
+              name: istio-envoy
+            - mountPath: /var/run/secrets/tokens
+              name: istio-token
+            - mountPath: /etc/istio/pod
+              name: istio-podinfo
+          initContainers:
+          - args:
+            - istio-iptables
+            - -p
+            - "15001"
+            - -z
+            - "15006"
+            - -u
+            - "1337"
+            - -m
+            - REDIRECT
+            - -i
+            - '*'
+            - -x
+            - ""
+            - -b
+            - '*'
+            - -d
+            - 15090,15021,15020
+            env:
+            - name: DNS_AGENT
+            - name: ISTIO_META_DNS_CAPTURE
+              value: "true"
+            image: docker.io/istio/{{ .Values.proxyimage }}
+            imagePullPolicy: Always
+            name: istio-init
+            resources:
+              limits:
+                cpu: "2"
+                memory: 1Gi
+              requests:
+                cpu: 100m
+                memory: 128Mi
+            securityContext:
+              allowPrivilegeEscalation: false
+              capabilities:
+                add:
+                - NET_ADMIN
+                - NET_RAW
+                drop:
+                - ALL
+              privileged: false
+              readOnlyRootFilesystem: false
+              runAsGroup: 0
+              runAsNonRoot: false
+              runAsUser: 0
+          securityContext:
+            fsGroup: 1337
+          volumes:
+          - emptyDir:
+              medium: Memory
+            name: istio-envoy
+          - emptyDir: {}
+            name: istio-data
+          - downwardAPI:
+              items:
+              - fieldRef:
+                  fieldPath: metadata.labels
+                path: labels
+              - fieldRef:
+                  fieldPath: metadata.annotations
+                path: annotations
+            name: istio-podinfo
+          - name: istio-token
+            projected:
+              sources:
+              - serviceAccountToken:
+                  audience: istio-ca
+                  expirationSeconds: 43200
+                  path: istio-token
+          - configMap:
+              name: istio-ca-root-cert
+            name: istiod-ca-cert
+  
+---
+
+apiVersion: types.kubefed.io/v1beta1
+kind: FederatedService
+metadata:
+  name: {{ .Release.Name }}-svc
+  namespace: {{ .Release.Namespace }}
+spec:
+  placement:
+    clusters:
+    {{- range $k2, $val := $.Values.clusters }}
+    - name: {{ $val }}
+    {{- end }}
+  template:
+    spec:
+      ports:
+      - name: grpc
+        port: {{ .Values.serverport }}
+        protocol: TCP
+        targetPort: {{ .Values.serverport }}
+      selector:
+        app: server
+      type: {{ .Values.servicetype | default "ClusterIP" | quote }}
+
+---
+
+apiVersion: types.kubefed.io/v1beta1
+kind: FederatedUpstream
+metadata:
+  name: static-{{ .Release.Namespace }}-{{ .Release.Name }}-svc-{{ .Values.serverport }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  placement:
+    clusters:
+    {{- range $k2, $val := $.Values.clusters }}
+    - name: {{ $val }}
+    {{- end }}
+  template:
+    spec:
+      sslConfig:
+        alpnProtocols:
+        - istio
+        sds:
+          certificatesSecretName: istio_server_cert
+          clusterName: gateway_proxy_sds
+          targetUri: 127.0.0.1:8234
+          validationContextName: istio_validation_context
+      static:
+        hosts:
+        - addr: {{ .Release.Name }}-svc.{{ .Release.Namespace }}.svc.cluster.local
+          port: {{ .Values.serverport }}
+      useHttp2: true
+
+---
+
+apiVersion: types.kubefed.io/v1beta1
+kind: FederatedVirtualService
+metadata:
+  name: {{ .Release.Name }}
+  namespace: {{ .Release.Namespace }}
+spec:
+  placement:
+    clusters:
+    {{- range $k2, $val := $.Values.clusters }}
+    - name: {{ $val }}
+    {{- end }}
+  template:
+    spec:
+      sslConfig:
+        secretRef:
+          name: {{ .Release.Name }}-secret
+          namespace: {{ .Release.Namespace }}
+        sniDomains:
+        - {{ .Values.serverDomain }}
+        verifySubjectAltName:
+        - {{ .Values.peerName }}
+        oneWayTls: false
+      virtualHost:
+        domains:
+        - {{ .Values.serverDomain }}
+        routes:
+        - matchers:
+          - prefix: /
+          routeAction:
+            single:
+              upstream:
+                name: static-{{ .Release.Namespace }}-{{ .Release.Name }}-svc-{{ .Values.serverport }}
+                namespace: {{ .Release.Namespace }}
+
+---
+
+apiVersion: networking.mesh.gloo.solo.io/v1
+kind: AccessPolicy
+metadata:
+  name: {{ .Release.Namespace }}-{{ .Release.Name }}-access
+  namespace: gloo-mesh
+spec:
+  destinationSelector:
+  - kubeServiceMatcher:
+      namespaces:
+      - {{ .Release.Namespace }}
+  sourceSelector:
+  - kubeServiceAccountRefs:
+      serviceAccounts:
+      {{- range $k2, $val := $.Values.clusters }}
+      - clusterName: {{ $val }}
+      {{- end }}
+        name: gateway-proxy
+        namespace: {{ .Values.glooedgenamespace }}
+
+---

@@ -1,0 +1,7 @@
+imagepullpolicy: Always
+imagename: devidaspawar/server
+imagetag: 0.0.1
+serverport: 50005
+glooedgenamespace: gloo-system
+gloomeshnamespace: gloo-mesh
+proxyimage: proxyv2:1.8.5
